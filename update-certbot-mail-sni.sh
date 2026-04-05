@@ -1,9 +1,7 @@
-sudo cat > /usr/local/bin/update-certbot-mail-sni.sh <<'EOF'
 #!/bin/bash
 # ================================================================
 # update-certbot-mail-sni.sh
 # Automatische SNI-Konfiguration für Postfix + Dovecot aus Certbot
-# Zertifikate liegen unter /etc/letsencrypt/live/
 # ================================================================
 
 set -euo pipefail
@@ -17,11 +15,9 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
 }
 
-# Temporäre Dateien
 TMP_DOVECOT=$(mktemp)
 TMP_POSTFIX=$(mktemp)
 
-# Alle Zertifikate finden (alle Ordner unter live/ die fullchain + privkey haben)
 find "$LIVE_DIR" -mindepth 1 -maxdepth 1 -type d | while read -r certdir; do
     domain=$(basename "$certdir")
     fullchain="$certdir/fullchain.pem"
@@ -30,7 +26,6 @@ find "$LIVE_DIR" -mindepth 1 -maxdepth 1 -type d | while read -r certdir; do
     if [[ -f "$fullchain" && -f "$privkey" ]]; then
         log "Gefunden: $domain"
 
-        # Dovecot local_name Block
         cat >> "$TMP_DOVECOT" <<EOD
 
 local_name $domain {
@@ -39,12 +34,11 @@ local_name $domain {
 }
 EOD
 
-        # Postfix tls_server_sni_maps Eintrag
         echo "$domain $privkey $fullchain" >> "$TMP_POSTFIX"
     fi
 done
 
-# Dovecot Konfig schreiben
+# Dovecot Konfig
 cat > "$TMP_DOVECOT" <<'HEADER'
 # Automatisch generiert von update-certbot-mail-sni.sh
 # Nicht manuell bearbeiten!
@@ -60,7 +54,7 @@ else
     DOVECOT_CHANGED=0
 fi
 
-# Postfix Map schreiben
+# Postfix Map
 cat > "$TMP_POSTFIX" <<'HEADER'
 # Automatisch generiert von update-certbot-mail-sni.sh
 # Format: hostname privkey fullchain
@@ -77,16 +71,16 @@ else
     POSTFIX_CHANGED=0
 fi
 
-# Postfix Haupt-Konfig sicherstellen
+# main.cf sicherstellen
 if ! postconf -h tls_server_sni_maps 2>/dev/null | grep -q "vmail_ssl.map"; then
     postconf -e "tls_server_sni_maps = hash:$POSTFIX_SNI_MAP"
     log "tls_server_sni_maps in main.cf aktiviert"
     POSTFIX_CHANGED=1
 fi
 
-# Dienste nur neu starten, wenn wirklich etwas geändert wurde
-if [ "$DOVECOT_CHANGED" = "1" ] || [ "$POSTFIX_CHANGED" = "1" ]; then
-    log "Konfiguration geändert → Dienste werden neu gestartet"
+# Nur bei Änderungen neu starten
+if [ "${DOVECOT_CHANGED:-0}" = "1" ] || [ "${POSTFIX_CHANGED:-0}" = "1" ]; then
+    log "Konfiguration geändert → Dienste neu starten"
     systemctl restart dovecot
     systemctl restart postfix
     log "Postfix und Dovecot neu gestartet"
@@ -95,6 +89,3 @@ else
 fi
 
 log "SNI-Update abgeschlossen"
-EOF
-
-sudo chmod +x /usr/local/bin/update-certbot-mail-sni.sh
