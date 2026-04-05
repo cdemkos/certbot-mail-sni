@@ -18,4 +18,4 @@ Nutzt ausschließlich die Zertifikate unter `/etc/letsencrypt/live/`.
 ```bash
 git clone https://github.com/cdemkos/certbot-mail-sni.git /opt/certbot-mail-sni
 cd /opt/certbot-mail-sni
-sudo ./install.sh
+sudo ./update-certbot-mail-sni.sh
