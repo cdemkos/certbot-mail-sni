@@ -10,4 +10,14 @@ Nutzt nur die Zertifikate unter `/etc/letsencrypt/live/`.
 ```bash
 sudo git clone https://github.com/cdemkos/certbot-mail-sni.git /opt/certbot-mail-sni
 cd /opt/certbot-mail-sni
-sudo ./update-certbot-mail-sni.sh
+sudo ./install.sh
+
+## Nach der Installation
+
+```bash
+sudo certbot certonly --manual \
+  --manual-auth-hook /etc/letsencrypt/acme-dns-auth.py \
+  --preferred-challenges dns \
+  --deploy-hook "/opt/certbot-mail-sni/update-certbot-mail-sni.sh" \
+  -d "*.mail.deinedomain.ch" \
+  -d "mail.deinedomain.ch"

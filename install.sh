@@ -1,4 +1,3 @@
-cat > install.sh <<'EOF'
 #!/bin/bash
 set -e
 
