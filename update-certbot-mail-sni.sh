@@ -2,7 +2,7 @@
 # ================================================================
 # update-certbot-mail-sni.sh
 # Automatische SNI-Konfiguration für Postfix + Dovecot aus Certbot
-# FILTER: Nur Ordner mit "mail." im Namen
+# FILTER: Nur Domains, die mit "mail." beginnen (z. B. mail.webseite.xxx)
 # ================================================================
 
 set -euo pipefail
@@ -19,12 +19,23 @@ log() {
 TMP_DOVECOT=$(mktemp)
 TMP_POSTFIX=$(mktemp)
 
-# Nur Ordner, die "mail." im Namen haben
+# ── Header zuerst schreiben (wichtiger Fix zum Original-Skript) ──
+cat > "$TMP_DOVECOT" <<'HEADER'
+# Automatisch generiert von update-certbot-mail-sni.sh
+# Nur mail.* Zertifikate - Nicht manuell bearbeiten!
+HEADER
+
+cat > "$TMP_POSTFIX" <<'HEADER'
+# Automatisch generiert von update-certbot-mail-sni.sh
+# Nur mail.* Zertifikate - Format: hostname privkey fullchain
+HEADER
+
+# ── Nur Ordner, die mit "mail." beginnen ──
 find "$LIVE_DIR" -mindepth 1 -maxdepth 1 -type d | while read -r certdir; do
     domain=$(basename "$certdir")
     
-    # FILTER: Nur Domains mit "mail." im Namen
-    if [[ "$domain" != *mail.* ]]; then
+    # Strenger Filter: Nur exakt mail.* (keine anderen Zertifikate!)
+    if [[ "$domain" != mail.* ]]; then
         continue
     fi
 
@@ -46,13 +57,7 @@ EOD
     fi
 done
 
-# Dovecot Konfig
-cat > "$TMP_DOVECOT" <<'HEADER'
-# Automatisch generiert von update-certbot-mail-sni.sh
-# Nur mail.* Zertifikate - Nicht manuell bearbeiten!
-HEADER
-cat "$TMP_DOVECOT" >> "$TMP_DOVECOT" 2>/dev/null || true
-
+# ── Dovecot Konfiguration ──
 if ! cmp -s "$TMP_DOVECOT" "$DOVECOT_SNI_CONF" 2>/dev/null; then
     mv "$TMP_DOVECOT" "$DOVECOT_SNI_CONF"
     log "Dovecot SNI Konfiguration aktualisiert"
@@ -62,13 +67,7 @@ else
     DOVECOT_CHANGED=0
 fi
 
-# Postfix Map
-cat > "$TMP_POSTFIX" <<'HEADER'
-# Automatisch generiert von update-certbot-mail-sni.sh
-# Nur mail.* Zertifikate - Format: hostname privkey fullchain
-HEADER
-cat "$TMP_POSTFIX" >> "$TMP_POSTFIX" 2>/dev/null || true
-
+# ── Postfix Map + postmap ──
 if ! cmp -s "$TMP_POSTFIX" "$POSTFIX_SNI_MAP" 2>/dev/null; then
     mv "$TMP_POSTFIX" "$POSTFIX_SNI_MAP"
     postmap -F hash:"$POSTFIX_SNI_MAP"
@@ -79,21 +78,20 @@ else
     POSTFIX_CHANGED=0
 fi
 
-# main.cf sicherstellen
-if ! postconf -h tls_server_sni_maps 2>/dev/null | grep -q "vmail_ssl.map"; then
+# ── tls_server_sni_maps in main.cf sicherstellen (aktueller Standard) ──
+if ! postconf -h tls_server_sni_maps 2>/dev/null | grep -q "$POSTFIX_SNI_MAP"; then
     postconf -e "tls_server_sni_maps = hash:$POSTFIX_SNI_MAP"
     log "tls_server_sni_maps in main.cf aktiviert"
     POSTFIX_CHANGED=1
 fi
 
-# Nur bei Änderungen neu starten
+# ── Nur bei echten Änderungen neu starten ──
 if [ "${DOVECOT_CHANGED:-0}" = "1" ] || [ "${POSTFIX_CHANGED:-0}" = "1" ]; then
     log "Konfiguration geändert → Dienste neu starten"
-    systemctl restart dovecot
-    systemctl restart postfix
+    systemctl restart dovecot postfix
     log "Postfix und Dovecot neu gestartet"
 else
-    log "Keine Änderungen → keine Neustarts nötig"
+    log "Keine Änderungen erkannt"
 fi
 
 log "SNI-Update abgeschlossen (nur mail.* Zertifikate)"
