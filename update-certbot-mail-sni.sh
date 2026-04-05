@@ -2,6 +2,7 @@
 # ================================================================
 # update-certbot-mail-sni.sh
 # Automatische SNI-Konfiguration für Postfix + Dovecot aus Certbot
+# FILTER: Nur Ordner mit "mail." im Namen
 # ================================================================
 
 set -euo pipefail
@@ -18,13 +19,20 @@ log() {
 TMP_DOVECOT=$(mktemp)
 TMP_POSTFIX=$(mktemp)
 
+# Nur Ordner, die "mail." im Namen haben
 find "$LIVE_DIR" -mindepth 1 -maxdepth 1 -type d | while read -r certdir; do
     domain=$(basename "$certdir")
+    
+    # FILTER: Nur Domains mit "mail." im Namen
+    if [[ "$domain" != *mail.* ]]; then
+        continue
+    fi
+
     fullchain="$certdir/fullchain.pem"
     privkey="$certdir/privkey.pem"
 
     if [[ -f "$fullchain" && -f "$privkey" ]]; then
-        log "Gefunden: $domain"
+        log "Gefunden und aktiviert: $domain"
 
         cat >> "$TMP_DOVECOT" <<EOD
 
@@ -41,7 +49,7 @@ done
 # Dovecot Konfig
 cat > "$TMP_DOVECOT" <<'HEADER'
 # Automatisch generiert von update-certbot-mail-sni.sh
-# Nicht manuell bearbeiten!
+# Nur mail.* Zertifikate - Nicht manuell bearbeiten!
 HEADER
 cat "$TMP_DOVECOT" >> "$TMP_DOVECOT" 2>/dev/null || true
 
@@ -57,7 +65,7 @@ fi
 # Postfix Map
 cat > "$TMP_POSTFIX" <<'HEADER'
 # Automatisch generiert von update-certbot-mail-sni.sh
-# Format: hostname privkey fullchain
+# Nur mail.* Zertifikate - Format: hostname privkey fullchain
 HEADER
 cat "$TMP_POSTFIX" >> "$TMP_POSTFIX" 2>/dev/null || true
 
@@ -88,4 +96,4 @@ else
     log "Keine Änderungen → keine Neustarts nötig"
 fi
 
-log "SNI-Update abgeschlossen"
+log "SNI-Update abgeschlossen (nur mail.* Zertifikate)"
