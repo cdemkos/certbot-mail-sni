@@ -19,6 +19,8 @@ log() {
 TMP_DOVECOT=$(mktemp)
 TMP_POSTFIX=$(mktemp)
 
+trap 'rm -f "$TMP_DOVECOT" "$TMP_POSTFIX"' EXIT
+
 # ── Header zuerst schreiben (wichtiger Fix zum Original-Skript) ──
 cat > "$TMP_DOVECOT" <<'HEADER'
 # Automatisch generiert von update-certbot-mail-sni.sh
@@ -27,14 +29,14 @@ HEADER
 
 cat > "$TMP_POSTFIX" <<'HEADER'
 # Automatisch generiert von update-certbot-mail-sni.sh
-# Nur mail.* Zertifikate - Format: hostname privkey fullchain
+# Nur mail.* Zertifikate - Format: hostname fullchain privkey
 HEADER
 
 # ── Nur Ordner, die mit "mail." beginnen ──
 find "$LIVE_DIR" -mindepth 1 -maxdepth 1 -type d | while read -r certdir; do
     domain=$(basename "$certdir")
     
-    # Strenger Filter: Nur exakt mail.* (keine anderen Zertifikate!)
+    # Nur Domains, die mit mail. beginnen
     if [[ "$domain" != mail.* ]]; then
         continue
     fi
@@ -53,35 +55,38 @@ local_name $domain {
 }
 EOD
 
-        echo "$domain $privkey $fullchain" >> "$TMP_POSTFIX"
+        # Postfix erwartet: hostname certfile [keyfile] — hier: fullchain then privkey
+        echo "$domain $fullchain $privkey" >> "$TMP_POSTFIX"
+    else
+        log "Ungültige Zertifikatsdateien für $domain — übersprungen"
     fi
 done
 
 # ── Dovecot Konfiguration ──
 if ! cmp -s "$TMP_DOVECOT" "$DOVECOT_SNI_CONF" 2>/dev/null; then
-    mv "$TMP_DOVECOT" "$DOVECOT_SNI_CONF"
+    install -m 644 "$TMP_DOVECOT" "$DOVECOT_SNI_CONF"
     log "Dovecot SNI Konfiguration aktualisiert"
     DOVECOT_CHANGED=1
 else
-    rm -f "$TMP_DOVECOT"
     DOVECOT_CHANGED=0
 fi
 
 # ── Postfix Map + postmap ──
 if ! cmp -s "$TMP_POSTFIX" "$POSTFIX_SNI_MAP" 2>/dev/null; then
-    mv "$TMP_POSTFIX" "$POSTFIX_SNI_MAP"
-    postmap -F hash:"$POSTFIX_SNI_MAP"
+    install -m 644 "$TMP_POSTFIX" "$POSTFIX_SNI_MAP"
+    # Erzeuge die .db mit postmap
+    postmap "$POSTFIX_SNI_MAP"
     log "Postfix SNI Map aktualisiert"
     POSTFIX_CHANGED=1
 else
-    rm -f "$TMP_POSTFIX"
     POSTFIX_CHANGED=0
 fi
 
 # ── tls_server_sni_maps in main.cf sicherstellen (aktueller Standard) ──
-if ! postconf -h tls_server_sni_maps 2>/dev/null | grep -q "$POSTFIX_SNI_MAP"; then
+current=$(postconf -h tls_server_sni_maps 2>/dev/null || true)
+if [[ "$current" != *"$POSTFIX_SNI_MAP"* ]]; then
     postconf -e "tls_server_sni_maps = hash:$POSTFIX_SNI_MAP"
-    log "tls_server_sni_maps in main.cf aktiviert"
+    log "tls_server_sni_maps in main.cf gesetzt"
     POSTFIX_CHANGED=1
 fi
 
@@ -95,3 +100,4 @@ else
 fi
 
 log "SNI-Update abgeschlossen (nur mail.* Zertifikate)"
+
