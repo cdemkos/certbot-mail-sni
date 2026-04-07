@@ -1,3 +1,5 @@
+Achtung der Skript ist noch in Entwicklung und kann Fehler verursachen! Benutzung auf eigene Gefahr!
+
 certbot-mail-sni
 
 Automatische SNI-Konfiguration für Postfix + Dovecot aus Certbot Zertifikaten.
