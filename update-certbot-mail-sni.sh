@@ -23,13 +23,9 @@ trap 'rm -f "$TMP_DOVECOT" "$TMP_POSTFIX"' EXIT
 
 # ── Header zuerst schreiben (wichtiger Fix zum Original-Skript) ──
 cat > "$TMP_DOVECOT" <<'HEADER'
-# Automatisch generiert von update-certbot-mail-sni.sh
-# Nur mail.* Zertifikate - Nicht manuell bearbeiten!
 HEADER
 
 cat > "$TMP_POSTFIX" <<'HEADER'
-# Automatisch generiert von update-certbot-mail-sni.sh
-# Nur mail.* Zertifikate - Format: hostname fullchain privkey
 HEADER
 
 # ── Nur Ordner, die mit "mail." beginnen ──
