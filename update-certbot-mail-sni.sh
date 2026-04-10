@@ -102,8 +102,8 @@ local_name $domain {
 }
 EOD
 
-    # Postfix SNI Zeile
-    printf '%s %s %s\n' "$domain" "$fullchain" "$privkey" >> "$TMP_POSTFIX"
+    # Postfix SNI Zeile (privkey ZUERST — Postfix erwartet: domain privkey fullchain)
+    printf '%s %s %s\n' "$domain" "$privkey" "$fullchain" >> "$TMP_POSTFIX"
 
 done < <(find "$LIVE_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
 
@@ -157,22 +157,20 @@ if [[ "$DOVECOT_CHANGED" -eq 1 ]]; then
 fi
 
 # --- Postfix SNI Map ---------------------------------------------------------
+# texthash: wird direkt gelesen, kein postmap nötig
 if ! cmp -s "$TMP_POSTFIX" "$POSTFIX_SNI_MAP" 2>/dev/null; then
     backup_file "$POSTFIX_SNI_MAP"
     install -m 644 "$TMP_POSTFIX" "$POSTFIX_SNI_MAP"
-    postmap "$POSTFIX_SNI_MAP" || die "postmap fehlgeschlagen"
-    log "Postfix SNI Map aktualisiert und gehasht: $POSTFIX_SNI_MAP"
+    log "Postfix SNI Map aktualisiert: $POSTFIX_SNI_MAP"
     POSTFIX_CHANGED=1
 else
-    # Auch bei unveränderter Map neu hashen (sicherheitshalber)
-    postmap "$POSTFIX_SNI_MAP" 2>/dev/null || true
-    log "Postfix SNI Map unverändert (neu gehasht)"
+    log "Postfix SNI Map unverändert"
 fi
 
-# tls_server_sni_maps in main.cf setzen falls noch nicht vorhanden
-if ! postconf -h tls_server_sni_maps 2>/dev/null | grep -qF "$POSTFIX_SNI_MAP"; then
-    postconf -e "tls_server_sni_maps = hash:$POSTFIX_SNI_MAP"
-    log "tls_server_sni_maps in main.cf gesetzt"
+# tls_server_sni_maps in main.cf setzen falls noch nicht vorhanden oder falsches Format
+if ! postconf -h tls_server_sni_maps 2>/dev/null | grep -qF "texthash:$POSTFIX_SNI_MAP"; then
+    postconf -e "tls_server_sni_maps = texthash:$POSTFIX_SNI_MAP"
+    log "tls_server_sni_maps in main.cf gesetzt (texthash)"
     POSTFIX_CHANGED=1
 fi
 
